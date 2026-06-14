@@ -1,20 +1,23 @@
 const express = require('express');
-const dontenv = require('dotenv');
+const dotenv = require('dotenv');
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId} = require('mongodb');
 //const {createRemoteJWKSet,jwtVerify } = require("jose.cjs");
-dontenv.config();
+dotenv.config();
 
 
 const uri = process.env.DB_URI;
 
 const app = express();
-const PORT = Process.env.PORT;
+
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-
+function verifyToken(req,res,next){
+  next();
+}
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -27,8 +30,8 @@ async function run() {
   try {
     // await client.connect();
 
-    const db = client.db("");
-    const destinationCollection = db.collection("destinations");
+    const db = client.db("medi-queue-tutor");
+    const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
 
     app.get("/featured", async (req, res) => {
@@ -119,6 +122,6 @@ app.get('/', (req, res) => {
   res.send('Mediqueue is running!');
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on ${port} PORT`);
+app.listen(PORT, () => {
+  console.log(`Server is running on ${PORT} PORT`);
 });
