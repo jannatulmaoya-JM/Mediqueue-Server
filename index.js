@@ -3,14 +3,8 @@ require('dotenv').config();
 const app = express();
 const port = 5000;
 
-
-
 //SkvSaZNPWuf4Ln87
 //Medi-Queue-Tutor
-
-// mongodb://Medi-Queue-Tutor:SkvSaZNPWuf4Ln87@ac-4avqcnd-shard-00-00.na5tthl.mongodb.net:27017,ac-4avqcnd-shard-00-01.na5tthl.mongodb.net:27017,ac-4avqcnd-shard-00-02.na5tthl.mongodb.net:27017/?ssl=true&replicaSet=atlas-o0uo82-shard-0&authSource=admin&appName=Cluster0
-
-
 const { MongoClient, ServerApiVersion, ObjectId} = require('mongodb');
 const uri = process.env.DB_URI;
 
