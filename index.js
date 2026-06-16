@@ -1,245 +1,165 @@
-const express = require('express');
-const dotenv = require('dotenv');
+const express = require("express");
+const dotenv = require("dotenv");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
+
 dotenv.config();
-const uri = process.env.DB_URI;
+
+const uri = process.env.MONGODB_URI;
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: ["http://localhost:3000"],
+  origin: [
+    "http://localhost:3000",
+    "https://mediquue-client.vercel.app"
+  ],
   credentials: true
 }));
 app.use(express.json());
-
-function verifyToken(req, res, next) {
-  next();
-}
 
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
+
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.CLIENT_URL || "http://localhost:3000"}/api/auth/jwks`),
+  { ignoreErrors: true }
+);
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req?.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ message: "Unauthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ message: "Unauthorized access" });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload; 
+    next();
+  } catch (error) {
+    console.error("Token verification failed:", error.message);
+    return res.status(403).json({ message: "Forbidden access" });
+  }
+};
 
 async function run() {
   try {
-    const db = client.db("medi-queue-tutor");
+    const db = client.db("mediQueueDB");
     const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
 
-    app.get("/tutors/my-tutors", async (req, res) => {
-      try {
-        const email = req.query.email;
-        if (!email) {
-          return res.status(400).json({ error: "Email query parameter is required" });
-        }
-        
-        const query = { createdBy: email };
-        const result = await tutorCollection.find(query).toArray();
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.get("/featured-tutors", async (req, res) => {
+      const result = await tutorCollection.find().limit(6).toArray();
+      res.json(result);
     });
 
     app.get("/tutors", async (req, res) => {
-      try {
-        const { search, startDate, endDate, limit } = req.query;
-        let query = {};
+      const { search, startDate, endDate } = req.query;
+      let query = {};
 
-        if (search) {
-          query.name = { $regex: search, $options: "i" };
-        }
-
-        if (startDate || endDate) {
-          query.sessionStartDate = {};
-          if (startDate) query.sessionStartDate.$gte = startDate;
-          if (endDate) query.sessionStartDate.$lte = endDate;
-        }
-
-        let cursor = tutorCollection.find(query);
-        
-        if (limit) {
-          cursor = cursor.limit(parseInt(limit));
-        }
-
-        const result = await cursor.toArray();
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
+      if (search) {
+        query.$or = [
+          { name: { $regex: search, $options: "i" } },
+          { subject: { $regex: search, $options: "i" } }
+        ];
       }
+
+      if (startDate && endDate) {
+        query.sessionStartDate = {
+          $gte: startDate,
+          $lte: endDate
+        };
+      }
+
+      const result = await tutorCollection.find(query).toArray();
+      res.json(result);
     });
 
-    app.get("/featured-tutors", async (req, res) => {
-      try {
-        const result = await tutorCollection.find().limit(4).toArray();
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.get("/tutors/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await tutorCollection.findOne({ _id: new ObjectId(id) });
+      res.json(result);
     });
 
-    app.post("/tutors", async (req, res) => {
-      try {
-        const tutorData = req.body;
-        const result = await tutorCollection.insertOne(tutorData);
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.post("/tutors", verifyToken, async (req, res) => {
+      const tutorData = req.body;
+      const result = await tutorCollection.insertOne(tutorData);
+      res.json(result);
     });
 
-    app.get("/tutors/:id", verifyToken, async (req, res) => {
-      try {
-        const { id } = req.params;
-        
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ error: "Invalid ID format" });
-        }
-
-        const result = await tutorCollection.findOne({ _id: new ObjectId(id) });
-        if (!result) {
-          return res.status(404).json({ error: "Tutor not found" });
-        }
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.patch("/tutors/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const updatedData = req.body;
+      const result = await tutorCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData }
+      );
+      res.json(result);
     });
 
-    const handleUpdateTutor = async (req, res) => {
-      try {
-        const { id } = req.params;
-        const updatedData = req.body;
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ error: "Invalid ID format" });
-        }
-
-        const result = await tutorCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updatedData }
-        );
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    };
-
-    app.patch("/tutors/:id", handleUpdateTutor);
-    app.put("/tutors/:id", handleUpdateTutor); 
-
-    app.delete("/tutors/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ error: "Invalid ID format" });
-        }
-        const result = await tutorCollection.deleteOne({ _id: new ObjectId(id) });
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.delete("/tutors/:id", verifyToken, async (req, res) => {
+      const { id } = req.params;
+      const result = await tutorCollection.deleteOne({ _id: new ObjectId(id) });
+      res.json(result);
     });
 
-    app.get("/bookings/:userId", async (req, res) => {
-      try {
-        const { userId } = req.params;
-
-        const result = await bookingCollection.find({
-          $or: [
-            { userId: userId },
-            { studentEmail: userId }
-          ]
-        }).toArray();
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
+    app.get("/bookings", verifyToken, async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res.status(400).json({ message: "Email query parameter is required" });
       }
-    });
-
-    app.get("/bookings", async (req, res) => {
-      try {
-        const email = req.query.email;
-        if (!email) {
-          return res.status(400).json({ error: "Email query parameter is required" });
-        }
-        
-        const query = { studentEmail: email };
-        const result = await bookingCollection.find(query).toArray();
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    app.patch("/bookings/:id", async (req, res) => {
-      try {
-        const { id } = req.params;
-        const { status } = req.body; 
-
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).json({ error: "Invalid Booking ID format" });
-        }
-
-        const result = await bookingCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { status: status } }
-        );
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+      const result = await bookingCollection.find({ studentEmail: email }).toArray();
+      res.json(result);
     });
 
     app.post("/bookings", verifyToken, async (req, res) => {
-      try {
-        const bookingData = req.body;
-        const { tutorId } = bookingData;
-
-        const result = await bookingCollection.insertOne(bookingData);
-
-        if (tutorId && ObjectId.isValid(tutorId)) {
-          await tutorCollection.updateOne(
-            { _id: new ObjectId(tutorId) },
-            { $inc: { totalSlot: -1 } }
-          );
-        }
-
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
+      const bookingData = req.body;
+      
+      const tutor = await tutorCollection.findOne({ _id: new ObjectId(bookingData.tutorId) });
+      if (!tutor || tutor.totalSlot <= 0) {
+        return res.status(400).json({ message: "This session is fully booked. You can't join at the moment." });
       }
+
+      const bookingResult = await bookingCollection.insertOne(bookingData);
+
+      await tutorCollection.updateOne(
+        { _id: new ObjectId(bookingData.tutorId) },
+        { $inc: { totalSlot: -1 } }
+      );
+
+      res.json(bookingResult);
     });
 
-    app.delete("/bookings/:bookingId", verifyToken, async (req, res) => {
-      try {
-        const { bookingId } = req.params;
-        if (!ObjectId.isValid(bookingId)) {
-          return res.status(400).json({ error: "Invalid Booking ID" });
-        }
-        const result = await bookingCollection.deleteOne({ _id: new ObjectId(bookingId) });
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+    app.patch("/bookings/:bookingId", verifyToken, async (req, res) => {
+      const { bookingId } = req.params;
+      const result = await bookingCollection.updateOne(
+        { _id: new ObjectId(bookingId) },
+        { $set: { status: "cancelled" } }
+      );
+      res.json(result);
     });
 
-    console.log("Connected successfully to MongoDB!");
+    console.log("Connected successfully to MongoDB for MediQueue!");
   } catch (error) {
-    console.error("Database connection fail:", error);
+    console.error("Database connection error:", error);
   }
 }
 run().catch(console.dir);
 
-app.get('/', (req, res) => {
-  res.send('Mediqueue Server is running successfully!');
+app.get("/", (req, res) => {
+  res.send("MediQueue Server is running fine!");
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
