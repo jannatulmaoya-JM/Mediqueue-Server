@@ -15,7 +15,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-
 function verifyToken(req, res, next) {
   next();
 }
@@ -136,7 +135,6 @@ async function run() {
     app.patch("/tutors/:id", handleUpdateTutor);
     app.put("/tutors/:id", handleUpdateTutor); 
 
- 
     app.delete("/tutors/:id", async (req, res) => {
       try {
         const { id } = req.params;
@@ -166,6 +164,40 @@ async function run() {
       }
     });
 
+    app.get("/bookings", async (req, res) => {
+      try {
+        const email = req.query.email;
+        if (!email) {
+          return res.status(400).json({ error: "Email query parameter is required" });
+        }
+        
+        const query = { studentEmail: email };
+        const result = await bookingCollection.find(query).toArray();
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+   
+    app.patch("/bookings/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body; 
+
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).json({ error: "Invalid Booking ID format" });
+        }
+
+        const result = await bookingCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: status } }
+        );
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
 
     app.post("/bookings", verifyToken, async (req, res) => {
       try {
@@ -206,7 +238,6 @@ async function run() {
   }
 }
 run().catch(console.dir);
-
 
 app.get('/', (req, res) => {
   res.send('Mediqueue Server is running successfully!');
