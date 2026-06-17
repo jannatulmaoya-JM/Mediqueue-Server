@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({
   origin: [
     "http://localhost:3001",
-    // "https://mediquue-client.vercel.app"
+  "https://mediqueue-client-amber.vercel.app/"
   ],
   credentials: true
 }));
@@ -28,7 +28,7 @@ const client = new MongoClient(uri, {
 });
 
 const JWKS = createRemoteJWKSet(
-  new URL(`${process.env.CLIENT_URL || "http://localhost:3001"}/api/auth/jwks`),
+  new URL(`${process.env.CLIENT_URL }/api/auth/jwks`),
   { ignoreErrors: true }
 );
 
@@ -55,7 +55,10 @@ const verifyToken = async (req, res, next) => {
 };
 
 async function run() {
+
   try {
+    // await client.connect();
+
     const db = client.db("medi-queue-tutor");
     const tutorCollection = db.collection("tutors");
     const bookingCollection = db.collection("bookings");
@@ -192,7 +195,7 @@ async function run() {
       res.json(result);
     });
 
-    console.log("Connected successfully to MongoDB for MediQueue!");
+    console.log("Connected successfully to MongoDB !");
   } catch (error) {
     console.error("Database connection error:", error);
   }
